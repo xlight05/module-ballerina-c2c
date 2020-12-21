@@ -111,6 +111,7 @@ public class KubernetesPlugin extends AbstractCompilerPlugin {
                 TomlValidator validator = new TomlValidator(Schema.from(getValidationSchema()));
                 validator.validate(toml);
                 List<Diagnostic> diagnostics = toml.diagnostics();
+//                diagnostics.add(createDummyDiag());
                 for (Diagnostic diagnostic : diagnostics) {
                     dlog.logDiagnostic(diagnostic.diagnosticInfo().severity(),
                             KubernetesContext.getInstance().getCurrentPackage(), diagnostic.location()
@@ -122,6 +123,17 @@ public class KubernetesPlugin extends AbstractCompilerPlugin {
             }
         }
     }
+
+//    private Diagnostic createDummyDiag() {
+//        LinePosition linePosition = LinePosition.from(1, 10);
+//        LineRange lineRange = LineRange.from("Kubernetes.toml", linePosition, linePosition);
+//
+//        TextRange textRange = TextRange.from(1, 10);
+//        TomlNodeLocation location = new TomlNodeLocation(lineRange, textRange);
+//        DiagnosticInfo info = new DiagnosticInfo("000", "tesssttt", DiagnosticSeverity.ERROR);
+//        TomlDiagnostic diagnostic = new TomlDiagnostic(location, info, "testtt");
+//        return diagnostic;
+//    }
 
     @Override
     public void process(PackageNode packageNode) {
