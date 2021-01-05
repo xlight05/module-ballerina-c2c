@@ -30,9 +30,13 @@ import io.ballerina.projects.PackageCompilation;
 import io.ballerina.projects.Project;
 import io.ballerina.projects.internal.model.Target;
 import io.ballerina.toml.api.Toml;
+import io.ballerina.toml.semantic.ast.TomlLongValueNode;
+import io.ballerina.toml.semantic.ast.TomlStringValueNode;
+import io.ballerina.toml.semantic.diagnostics.TomlDiagnostic;
 import io.ballerina.toml.validator.TomlValidator;
 import io.ballerina.toml.validator.schema.Schema;
 import io.ballerina.tools.diagnostics.Diagnostic;
+import io.ballerina.tools.diagnostics.DiagnosticInfo;
 import io.ballerina.tools.diagnostics.DiagnosticSeverity;
 import org.apache.commons.io.IOUtils;
 import org.ballerinalang.compiler.CompilerOptionName;
@@ -43,6 +47,7 @@ import org.ballerinalang.model.elements.Flag;
 import org.ballerinalang.model.elements.PackageID;
 import org.ballerinalang.model.tree.AnnotationAttachmentNode;
 import org.ballerinalang.model.tree.FunctionNode;
+import org.ballerinalang.model.tree.NodeKind;
 import org.ballerinalang.model.tree.PackageNode;
 import org.ballerinalang.model.tree.ServiceNode;
 import org.ballerinalang.model.tree.SimpleVariableNode;
@@ -52,8 +57,13 @@ import org.ballerinalang.util.diagnostic.DiagnosticLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.wso2.ballerinalang.compiler.semantics.model.types.BType;
+import org.wso2.ballerinalang.compiler.tree.BLangCompilationUnit;
+import org.wso2.ballerinalang.compiler.tree.BLangFunction;
+import org.wso2.ballerinalang.compiler.tree.BLangIdentifier;
 import org.wso2.ballerinalang.compiler.tree.BLangImportPackage;
 import org.wso2.ballerinalang.compiler.tree.BLangPackage;
+import org.wso2.ballerinalang.compiler.tree.BLangResourceFunction;
+import org.wso2.ballerinalang.compiler.tree.BLangSimpleVariable;
 import org.wso2.ballerinalang.compiler.tree.expressions.BLangLiteral;
 import org.wso2.ballerinalang.compiler.tree.expressions.BLangRecordLiteral;
 import org.wso2.ballerinalang.compiler.tree.expressions.BLangSimpleVarRef;
@@ -135,9 +145,100 @@ public class KubernetesPlugin extends AbstractCompilerPlugin {
 //        return diagnostic;
 //    }
 
+    private void validateProbes(BLangPackage bPackage) throws KubernetesPluginException {
+        try {
+            Toml ready = this.toml.getTable("cloud").getTable("deployment").getTable("probes").getTable("readiness");
+//            Toml live = this.toml.getTable("cloud").getTable("deployment").getTable("probes").getTable("liveness");
+
+            validatePortAndPath(ready, bPackage);
+        } catch (NullPointerException ignored) {
+            //ignored
+        }
+    }
+
+    private void validatePortAndPath (Toml toml, BLangPackage bPackage) throws KubernetesPluginException {
+        boolean isPortFound = false;
+        boolean isPathFound = false;
+        long port = ((TomlLongValueNode) toml.get("port")).getValue();
+        String path = ((TomlStringValueNode) toml.get("path")).getValue();
+
+        List<BLangCompilationUnit> compilationUnits = bPackage.getCompilationUnits();
+        for (BLangCompilationUnit compilationUnit : compilationUnits) {
+            List<TopLevelNode> topLevelNodes = compilationUnit.getTopLevelNodes();
+
+            List<ServiceNode> serviceNodes = topLevelNodes.stream()
+                    .filter(tln -> tln instanceof ServiceNode)
+                    .map(tln -> (ServiceNode) tln)
+                    .collect(Collectors.toList());
+
+//            for (ServiceNode serviceNode : serviceNodes) {
+//                Optional<? extends ExpressionNode> initListener = serviceNode.getAttachedExprs().stream()
+//                        .filter(aex -> aex instanceof BLangTypeInit)
+//                        .findAny();
+//
+//                if (initListener.isPresent()) {
+//                    serviceNodes.forEach(sn -> process(sn, Collections.singletonList(serviceAnnotation)));
+//                }
+//            }
+            
+            for (ServiceNode serviceNode :serviceNodes) {
+                //Find Listener Name
+                List<String> listenerNamesToExpose =
+                        serviceNode.getAttachedExprs().stream().filter(aex -> aex instanceof BLangSimpleVarRef)
+                                .map(aex -> (BLangSimpleVarRef) aex)
+                                .map(BLangSimpleVarRef::toString)
+                                .collect(Collectors.toList());
+
+                //Find the Listner instance and match the port
+                for (TopLevelNode topLevelNode : topLevelNodes) {
+                    if (topLevelNode instanceof SimpleVariableNode) {
+                        SimpleVariableNode listener = (SimpleVariableNode) topLevelNode;
+                        if (listenerNamesToExpose.contains(listener.getName().getValue())) {
+                            BLangTypeInit bListener = (BLangTypeInit) ((BLangSimpleVariable) listener).expr;
+                            int listenerPort = ServiceAnnotationProcessor.extractPort(bListener);
+                            if (listenerPort == port) {
+                                isPortFound = true;
+                            }
+                        }
+                    }
+                }
+
+                if (!isPortFound) {
+                    dlog.logDiagnostic(DiagnosticSeverity.ERROR,KubernetesContext.getInstance().getCurrentPackage(),
+                            toml.get("port").location(), "Invalid Port");
+                    dlog.logDiagnostic(DiagnosticSeverity.ERROR,KubernetesContext.getInstance().getCurrentPackage(),
+                            toml.get("path").location(), "Invalid Path");
+                }
+                //Find resource in service
+                List<BLangFunction> functions = serviceNode.getServiceClass().getFunctions();
+                for (BLangFunction function : functions) {
+                    if (function.getKind() == NodeKind.RESOURCE_FUNC) {
+                        BLangResourceFunction resourceFunction = (BLangResourceFunction) function;
+                        List<BLangIdentifier> resourcePathList = resourceFunction.resourcePath;
+                        for (BLangIdentifier identifier: resourcePathList) {
+                            String resourcePath = "/"+identifier.getValue();
+                            if (resourcePath.equals(path)) {
+                                isPathFound = true;
+                            }
+                        }
+                    }
+                }
+                if (!isPathFound) {
+                    dlog.logDiagnostic(DiagnosticSeverity.ERROR,KubernetesContext.getInstance().getCurrentPackage(),
+                            toml.get("path").location(), "Invalid Path");
+                }
+            }
+        }
+    }
+
     @Override
     public void process(PackageNode packageNode) {
         BLangPackage bPackage = (BLangPackage) packageNode;
+        try {
+            validateProbes(bPackage); //TODO move down
+        } catch (KubernetesPluginException e) {
+            e.printStackTrace();
+        }
         // Get the imports with alias _
         List<BLangImportPackage> c2cImports = bPackage.getImports().stream()
                 .filter(i -> i.symbol.toString().startsWith("ballerina/c2c") &&
@@ -209,11 +310,14 @@ public class KubernetesPlugin extends AbstractCompilerPlugin {
                         .collect(Collectors.toList());
 
                 // Generate artifacts for listeners attached to services
-                topLevelNodes.stream()
-                        .filter(tln -> tln instanceof SimpleVariableNode)
-                        .map(tln -> (SimpleVariableNode) tln)
-                        .filter(listener -> listenerNamesToExpose.contains(listener.getName().getValue()))
-                        .forEach(listener -> process(listener, Collections.singletonList(serviceAnnotation)));
+                for (TopLevelNode topLevelNode : topLevelNodes) {
+                    if (topLevelNode instanceof SimpleVariableNode) {
+                        SimpleVariableNode listener = (SimpleVariableNode) topLevelNode;
+                        if (listenerNamesToExpose.contains(listener.getName().getValue())) {
+                            process(listener, Collections.singletonList(serviceAnnotation));
+                        }
+                    }
+                }
 
                 // Generate artifacts for main functions
                 topLevelNodes.stream()
