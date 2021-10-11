@@ -117,7 +117,7 @@ public class CreateCloudTomlExecutor implements LSCommandExecutor {
                         "# Uncomment Any field below if you want to override the default value." +
                         CommonUtil.LINE_SEPARATOR + CommonUtil.LINE_SEPARATOR);
 
-        BoilerplateGenerator generator = new BoilerplateGenerator(Schema.from(getValidationSchema()));
+        BoilerplateGenerator1 generator = new BoilerplateGenerator1(Schema.from(getValidationSchema()));
         for (String line : generator.getOutput()) {
             content.append("#").append(line);
         }
