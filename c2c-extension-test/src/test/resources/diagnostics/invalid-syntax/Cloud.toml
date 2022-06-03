@@ -1,4 +1,4 @@
 [container.image]
 repository  "wso2"
 name = "hello"
-base="ballerina/jre11:v1"
+base="xlight05/jre11:v1"

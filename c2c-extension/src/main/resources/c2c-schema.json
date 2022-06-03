@@ -53,7 +53,7 @@
             "base": {
               "type": "string",
               "pattern": "^(?!\\s*$).+",
-              "default": "ballerina/jre11:v1",
+              "default": "xlight05/jre11:v1",
               "message": {
                 "pattern": "`base` should not be empty"
               }
