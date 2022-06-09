@@ -18,7 +18,7 @@
         }
       }
     },
-    "container": {
+    "container1": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
