@@ -17,9 +17,11 @@
 package io.ballerina.c2c.tasks;
 
 import io.ballerina.c2c.ArtifactManager;
+import io.ballerina.c2c.diagnostics.NullLocation;
 import io.ballerina.c2c.exceptions.KubernetesPluginException;
 import io.ballerina.c2c.models.KubernetesContext;
 import io.ballerina.c2c.models.KubernetesDataHolder;
+import io.ballerina.c2c.util.C2CDiagnosticCodes;
 import io.ballerina.c2c.utils.KubernetesUtils;
 import io.ballerina.projects.BuildOptions;
 import io.ballerina.projects.CloudToml;
@@ -33,6 +35,10 @@ import io.ballerina.projects.Project;
 import io.ballerina.projects.plugins.CompilerLifecycleEventContext;
 import io.ballerina.projects.plugins.CompilerLifecycleTask;
 import io.ballerina.toml.api.Toml;
+import io.ballerina.tools.diagnostics.Diagnostic;
+import io.ballerina.tools.diagnostics.DiagnosticFactory;
+import io.ballerina.tools.diagnostics.DiagnosticInfo;
+import io.ballerina.tools.diagnostics.DiagnosticSeverity;
 import org.ballerinalang.model.elements.PackageID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +75,11 @@ public class C2CCodeGeneratedTask implements CompilerLifecycleTask<CompilerLifec
         if (cloud == null || !KubernetesUtils.isBuildOptionDockerOrK8s(cloud)) {
             return;
         }
+        DiagnosticInfo diagnosticInfo = new DiagnosticInfo(C2CDiagnosticCodes.DOCKER_FAILED.getCode(),
+                "Test Diag", DiagnosticSeverity.WARNING);
+        Diagnostic diagnostic = DiagnosticFactory.createDiagnostic(diagnosticInfo, new NullLocation());
+        compilerLifecycleEventContext.reportDiagnostic(diagnostic);
+        printError("reported err");
         Optional<Path> executablePath = compilerLifecycleEventContext.getGeneratedArtifactPath();
         final Package currentPackage = compilerLifecycleEventContext.currentPackage();
         PackageDescriptor descriptor = currentPackage.descriptor();
